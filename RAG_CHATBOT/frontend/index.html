@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>VectorMind RAG</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body[data-theme="dark"] {
+  --bg:#0C0C14; --bg2:#11111C; --panel:#161624; --border:#1E1E32;
+  --acc:#7C6FFF; --teal:#4ECDC4; --red:#FF6B6B; --green:#4ADE80; --yellow:#FCD34D;
+  --text:#E2E2EE; --text2:#8888AA; --text3:#44445A;
+  --particle1:#7C6FFF; --particle2:#4ECDC4; --particle3:#FF6B6B; --particle4:#4ADE80;
+  --canvas-bg:#0A0A12;
+}
+body[data-theme="light"] {
+  --bg:#F5F5FA; --bg2:#FFFFFF; --panel:#EDEDF7; --border:#DDDDE8;
+  --acc:#5B4FE8; --teal:#2BADA6; --red:#E85B5B; --green:#28A745; --yellow:#F0A500;
+  --text:#1A1A2E; --text2:#555577; --text3:#9999BB;
+  --particle1:#5B4FE8; --particle2:#2BADA6; --particle3:#E85B5B; --particle4:#28A745;
+  --canvas-bg:#EEEEF8;
+}
+body[data-theme="space"] {
+  --bg:#020209; --bg2:#06060F; --panel:#0A0A18; --border:#141428;
+  --acc:#A78BFA; --teal:#38BDF8; --red:#FB7185; --green:#34D399; --yellow:#FDE68A;
+  --text:#EDE9FE; --text2:#7C6FAA; --text3:#3D3560;
+  --particle1:#A78BFA; --particle2:#38BDF8; --particle3:#FB7185; --particle4:#34D399;
+  --canvas-bg:#02020C;
+}
+body[data-theme="planet"] {
+  --bg:#0A1628; --bg2:#0D1F3C; --panel:#112347; --border:#1A3360;
+  --acc:#F97316; --teal:#06B6D4; --red:#EF4444; --green:#10B981; --yellow:#EAB308;
+  --text:#FFF7ED; --text2:#94A3B8; --text3:#334155;
+  --particle1:#F97316; --particle2:#06B6D4; --particle3:#EF4444; --particle4:#10B981;
+  --canvas-bg:#061122;
+}
+
+body {
+  background:var(--bg); color:var(--text);
+  font-family:'Inter',sans-serif;
+  height:100vh; display:flex; flex-direction:column; overflow:hidden;
+  transition:background .3s,color .3s;
+}
+
+.topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 18px; height:46px;
+  border-bottom:1px solid var(--border); background:var(--bg2);
+  flex-shrink:0;
+}
+.logo {
+  display:flex; align-items:center; gap:8px;
+  font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:500; color:var(--acc);
+}
+.logo-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--acc);
+  animation:blink 2s infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.topbar-right { display:flex; align-items:center; gap:8px; }
+
+.badge {
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  padding:3px 8px; border-radius:4px;
+  border:1px solid var(--border); color:var(--text2); background:transparent;
+}
+.badge.live { border-color:rgba(74,222,128,.3); color:var(--green); background:rgba(74,222,128,.06); display:flex; align-items:center; gap:5px; }
+.live-dot { width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite; }
+
+.theme-toggle {
+  display:flex; align-items:center; gap:4px;
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:6px; padding:3px;
+}
+.t-btn {
+  padding:3px 8px; border-radius:4px; border:none; cursor:pointer;
+  font-size:10px; font-family:'JetBrains Mono',monospace;
+  color:var(--text3); background:transparent; transition:all .15s;
+}
+.t-btn.active { background:var(--acc); color:#fff; }
+
+.layout { display:flex; flex:1; overflow:hidden; }
+
+.sidebar {
+  width:280px; border-right:1px solid var(--border); background:var(--bg2);
+  display:flex; flex-direction:column; flex-shrink:0; overflow-y:auto;
+}
+.sidebar::-webkit-scrollbar{width:2px;}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+.sb-block { padding:12px 14px; border-bottom:1px solid var(--border); }
+.sb-label {
+  font-family:'JetBrains Mono',monospace; font-size:9px;
+  color:var(--text3); text-transform:uppercase; letter-spacing:.1em; margin-bottom:8px;
+}
+
+.upload {
+  border:1px dashed var(--border); border-radius:8px;
+  padding:14px 10px; text-align:center; cursor:pointer;
+  transition:all .2s; position:relative;
+}
+.upload:hover { border-color:var(--acc); background:rgba(124,111,255,.04); }
+.upload input { position:absolute;inset:0;opacity:0;cursor:pointer; }
+.upload-icon { font-size:20px; margin-bottom:5px; }
+.upload-text { font-size:12px; color:var(--text2); line-height:1.5; }
+.upload-hint { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text3); margin-top:3px; }
+
+.paste-area textarea {
+  width:100%;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:8px 10px;
+  color:var(--text);
+  font-size:12px;
+  font-family:'Inter',sans-serif;
+  resize:vertical;
+  outline:none;
+  box-sizing:border-box;
+  transition:border-color .2s;
+}
+.paste-area textarea:focus { border-color:var(--acc); }
+.paste-area textarea::placeholder { color:var(--text3); }
+
+.btn-process, .btn-clear {
+  width:100%;
+  margin-top:6px;
+  padding:6px;
+  color:#fff;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:12px;
+  font-family:'Inter',sans-serif;
+  transition:all 0.2s;
+}
+.btn-process { background:var(--acc); }
+.btn-process:hover { filter:brightness(1.15); }
+.btn-process:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-clear { background:var(--red); }
+.btn-clear:hover { filter:brightness(1.15); }
+
+/* Document List */
+.doc-list {
+  max-height:150px;
+  overflow-y:auto;
+}
+.doc-item {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:4px 6px;
+  border-radius:4px;
+  margin-bottom:2px;
+  background:var(--bg);
+  font-size:11px;
+  color:var(--text2);
+}
+.doc-item:hover { background:var(--panel); }
+.doc-del {
+  background:none;
+  border:none;
+  color:var(--red);
+  cursor:pointer;
+  font-size:11px;
+  padding:2px 4px;
+}
+.doc-del:hover { opacity:0.7; }
+
+.viz-wrap { padding:10px 14px; border-bottom:1px solid var(--border); }
+#vizCanvas {
+  width:100%; height:160px; border-radius:6px;
+  background:var(--canvas-bg); border:1px solid var(--border); display:block;
+}
+
+.pipe-steps { display:flex; flex-direction:column; gap:3px; }
+.pipe-step {
+  display:flex; align-items:center; gap:8px;
+  padding:5px 7px; border-radius:6px; border:1px solid transparent;
+  transition:all .25s;
+}
+.pipe-step.idle { opacity:.4; }
+.pipe-step.running { border-color:var(--acc); background:rgba(124,111,255,.08); }
+.pipe-step.done { border-color:rgba(74,222,128,.25); background:rgba(74,222,128,.05); }
+.ps-icon {
+  width:20px;height:20px;border-radius:4px;
+  background:var(--panel); border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;
+}
+.pipe-step.running .ps-icon { background:rgba(124,111,255,.2); border-color:var(--acc); }
+.pipe-step.done .ps-icon { background:rgba(74,222,128,.12); border-color:var(--green); }
+.ps-info { flex:1; }
+.ps-name { font-size:11px; color:var(--text2); font-weight:500; }
+.pipe-step.running .ps-name { color:var(--acc); }
+.pipe-step.done .ps-name { color:var(--green); }
+.ps-detail { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text3); margin-top:1px; }
+
+.stats-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+.stat { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:7px 9px; text-align:center; }
+.stat-n { font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:500; color:var(--text); }
+.stat-n.a{color:var(--acc);} .stat-n.t{color:var(--teal);} .stat-n.g{color:var(--green);}
+.stat-l { font-size:9px; color:var(--text3); margin-top:1px; }
+
+.cfg-row { margin-bottom:9px; }
+.cfg-row:last-child{margin-bottom:0;}
+.cfg-top { display:flex; justify-content:space-between; margin-bottom:4px; }
+.cfg-name { font-size:11px; color:var(--text2); }
+.cfg-val { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--acc); }
+input[type=range] {
+  width:100%;height:2px;border-radius:2px;background:var(--border);
+  outline:none;cursor:pointer;-webkit-appearance:none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none;width:10px;height:10px;border-radius:50%;
+  background:var(--acc);cursor:pointer;
+}
+
+.chat { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.chat-header {
+  padding:9px 18px; border-bottom:1px solid var(--border); background:var(--bg2);
+  display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
+}
+.chat-title { font-size:13px; font-weight:500; color:var(--text); display:flex;align-items:center;gap:7px; }
+.clear-btn {
+  font-size:11px; color:var(--text3); background:none;
+  border:1px solid var(--border); padding:4px 10px; border-radius:5px;
+  cursor:pointer; font-family:'Inter',sans-serif;
+}
+.clear-btn:hover{color:var(--text2);border-color:var(--text3);}
+
+.messages {
+  flex:1;overflow-y:auto;padding:18px 18px;
+  display:flex;flex-direction:column;gap:18px;
+}
+.messages::-webkit-scrollbar{width:2px;}
+.messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+.welcome {
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:12px;text-align:center;padding:20px;
+}
+.welcome-icon{font-size:30px;margin-bottom:2px;}
+.welcome-title{font-size:16px;font-weight:500;color:var(--text);}
+.welcome-sub{font-size:13px;color:var(--text2);max-width:300px;line-height:1.6;}
+.chips{display:flex;flex-direction:column;gap:5px;width:100%;max-width:360px;margin-top:4px;}
+.chip {
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:8px 13px;font-size:12px;color:var(--text2);cursor:pointer;
+  text-align:left;transition:all .15s;display:flex;align-items:center;gap:7px;
+}
+.chip:hover{border-color:var(--acc);color:var(--text);background:rgba(124,111,255,.05);}
+
+.msg{display:flex;gap:9px;}
+.msg.user{flex-direction:row-reverse;}
+.avatar {
+  width:26px;height:26px;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;flex-shrink:0;margin-top:2px;font-weight:500;
+}
+.msg.user .avatar{background:var(--acc);color:#fff;}
+.msg.bot .avatar{background:var(--teal);color:#fff;}
+.msg-body{flex:1;max-width:580px;}
+.msg.user .msg-body{display:flex;flex-direction:column;align-items:flex-end;}
+.msg-name{font-size:10px;color:var(--text3);margin-bottom:4px;font-family:'JetBrains Mono',monospace;}
+.msg.user .msg-name{text-align:right;}
+.bubble{padding:10px 13px;border-radius:10px;font-size:13px;line-height:1.65;border:1px solid var(--border);}
+.msg.user .bubble{background:rgba(124,111,255,.1);border-color:rgba(124,111,255,.2);color:var(--text);}
+.msg.bot .bubble{background:var(--panel);color:var(--text);}
+
+.sources{margin-top:7px;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.sources-head{
+  padding:5px 11px;background:var(--bg2);border-bottom:1px solid var(--border);
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.src-count{
+  color:var(--teal);background:rgba(78,205,196,.08);
+  border:1px solid rgba(78,205,196,.2);padding:1px 6px;border-radius:10px;
+}
+.sources-body{padding:7px;display:flex;flex-direction:column;gap:5px;}
+.chunk{padding:7px 9px;background:var(--bg);border-radius:6px;border-left:2px solid var(--acc);}
+.chunk-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;}
+.chunk-id{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--acc);}
+.chunk-text{font-size:11px;color:var(--text2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+
+.typing{display:flex;gap:9px;}
+.typing-bubble{
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:11px 14px;display:flex;align-items:center;gap:12px;
+}
+.dots{display:flex;gap:3px;}
+.dot{width:5px;height:5px;border-radius:50%;animation:bounce 1.2s infinite;}
+.dot:nth-child(1){background:var(--acc);}
+.dot:nth-child(2){background:var(--teal);animation-delay:.2s;}
+.dot:nth-child(3){background:var(--red);animation-delay:.4s;}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
+.typing-status{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);}
+.typing-status span{color:var(--acc);}
+
+.input-area{
+  padding:10px 16px 13px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0;
+}
+.input-wrap{
+  display:flex;align-items:flex-end;gap:7px;
+  background:var(--bg);border:1px solid var(--border);border-radius:10px;
+  padding:9px 11px;transition:border-color .2s;
+}
+.input-wrap:focus-within{border-color:rgba(124,111,255,.4);}
+textarea{
+  flex:1;background:transparent;border:none;outline:none;
+  font-size:13px;color:var(--text);font-family:'Inter',sans-serif;
+  resize:none;max-height:90px;line-height:1.5;
+}
+textarea::placeholder{color:var(--text3);}
+.send-btn{
+  width:29px;height:29px;border-radius:6px;background:var(--acc);
+  border:none;color:#fff;font-size:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.send-btn:hover{filter:brightness(1.15);}
+.input-hint{margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text3);text-align:center;}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="topbar">
+  <div class="logo"><div class="logo-dot"></div>VectorMind</div>
+  <div class="topbar-right">
+    <div class="badge live"><div class="live-dot"></div>FAISS ready</div>
+    <div class="badge">MiniLM-L6-v2</div>
+    <div class="theme-toggle">
+      <button class="t-btn active" onclick="setTheme('dark',this)">dark</button>
+      <button class="t-btn" onclick="setTheme('light',this)">light</button>
+      <button class="t-btn" onclick="setTheme('space',this)">space</button>
+      <button class="t-btn" onclick="setTheme('planet',this)">planet</button>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sb-block">
+      <div class="sb-label">Add Content</div>
+      
+      <div style="margin-bottom:8px;">
+        <div class="upload" id="uploadZone">
+          <input type="file" accept=".pdf,.txt,.md" multiple onchange="handleFiles(event)"/>
+          <div class="upload-icon">📂</div>
+          <div class="upload-text">Upload Multiple Files</div>
+          <div class="upload-hint">PDF · TXT · MD (select multiple)</div>
+        </div>
+      </div>
+
+      <div class="paste-area">
+        <textarea id="pasteText" rows="3" placeholder="Or paste text here..."></textarea>
+        <button class="btn-process" onclick="processPastedText()">📝 Process Pasted Text</button>
+      </div>
+    </div>
+
+    <div class="sb-block">
+      <div class="sb-label">Documents</div>
+      <div class="doc-list" id="docList">
+        <div style="color:var(--text3);font-size:11px;padding:4px;">No documents uploaded</div>
+      </div>
+      <button class="btn-clear" onclick="clearIndex()" style="margin-top:6px;">🗑️ Clear All</button>
+    </div>
+
+    <div class="viz-wrap">
+      <div class="sb-label">Pipeline Visualizer</div>
+      <canvas id="vizCanvas" width="202" height="160"></canvas>
+    </div>
+
+    <div class="sb-block">
+      <div class="sb-label">RAG Pipeline</div>
+      <div class="pipe-steps">
+        <div class="pipe-step idle" id="ps0"><div class="ps-icon">📄</div><div class="ps-info"><div class="ps-name">Ingest</div><div class="ps-detail">PyMuPDF · read</div></div></div>
+        <div class="pipe-step idle" id="ps1"><div class="ps-icon">✂</div><div class="ps-info"><div class="ps-name">Chunk</div><div class="ps-detail">500 tok · 50 overlap</div></div></div>
+        <div class="pipe-step idle" id="ps2"><div class="ps-icon">⬡</div><div class="ps-info"><div class="ps-name">Embed</div><div class="ps-detail">384-dim vectors</div></div></div>
+        <div class="pipe-step idle" id="ps3"><div class="ps-icon">🗄</div><div class="ps-info"><div class="ps-name">Index</div><div class="ps-detail">FAISS · L2</div></div></div>
+        <div class="pipe-step idle" id="ps4"><div class="ps-icon">🔍</div><div class="ps-info"><div class="ps-name">Retrieve</div><div class="ps-detail">cosine similarity</div></div></div>
+        <div class="pipe-step idle" id="ps5"><div class="ps-icon">✨</div><div class="ps-info"><div class="ps-name">Generate</div><div class="ps-detail">Gemini · grounded</div></div></div>
+      </div>
+    </div>
+
+    <div class="sb-block">
+      <div class="sb-label">Index Stats</div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-n a" id="sChunks">0</div><div class="stat-l">chunks</div></div>
+        <div class="stat"><div class="stat-n t" id="sDocs">0</div><div class="stat-l">docs</div></div>
+        <div class="stat"><div class="stat-n g">384</div><div class="stat-l">dims</div></div>
+      </div>
+    </div>
+
+    <div class="sb-block">
+      <div class="sb-label">Config</div>
+      <div class="cfg-row">
+        <div class="cfg-top"><span class="cfg-name">Top-K</span><span class="cfg-val" id="vk">3</span></div>
+        <input type="range" min="1" max="8" value="3" oninput="document.getElementById('vk').textContent=this.value"/>
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-top"><span class="cfg-name">Temperature</span><span class="cfg-val" id="vt">0.7</span></div>
+        <input type="range" min="0" max="10" value="7" oninput="document.getElementById('vt').textContent=(this.value/10).toFixed(1)"/>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat">
+    <div class="chat-header">
+      <div class="chat-title">💬 Chat</div>
+      <button class="clear-btn" onclick="clearChat()">Clear History</button>
+    </div>
+
+    <div class="messages" id="msgs">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">⬡</div>
+        <div class="welcome-title">Ready to retrieve</div>
+        <div class="welcome-sub">Upload PDFs or paste text. Ask anything — watch the pipeline animate as your query flows through each stage.</div>
+        <div class="chips">
+          <div class="chip" onclick="useChip(this)">🔍 What is this document about?</div>
+          <div class="chip" onclick="useChip(this)">📊 Summarise the key points</div>
+          <div class="chip" onclick="useChip(this)">💡 What are the main conclusions?</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea id="inp" rows="1" placeholder="Ask anything about your document…"
+          onkeydown="handleKey(event)"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,90)+'px'"></textarea>
+        <button class="send-btn" onclick="send()">➤</button>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for newline</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── THEME ── */
+function setTheme(t, btn) {
+  document.body.setAttribute('data-theme', t);
+  document.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+/* ── CANVAS ── */
+const cv = document.getElementById('vizCanvas');
+const cx = cv.getContext('2d');
+const CW = cv.width, CH = cv.height;
+let vizState = 'idle';
+let vizProgress = 0;
+let vizAnim = 0;
+
+const particles = Array.from({length: 35}, () => ({
+  x: Math.random() * (CW - 16) + 8,
+  y: Math.random() * (CH - 16) + 8,
+  r: Math.random() * 1.8 + 1,
+  vx: (Math.random() - .5) * .4,
+  vy: (Math.random() - .5) * .4,
+  g: Math.floor(Math.random() * 4),
+  alpha: Math.random() * .5 + .5,
+  phase: Math.random() * Math.PI * 2
+}));
+
+function getColors() {
+  const s = getComputedStyle(document.body);
+  return {
+    p1: s.getPropertyValue('--particle1').trim(),
+    p2: s.getPropertyValue('--particle2').trim(),
+    p3: s.getPropertyValue('--particle3').trim(),
+    p4: s.getPropertyValue('--particle4').trim(),
+    acc: s.getPropertyValue('--acc').trim(),
+    teal: s.getPropertyValue('--teal').trim(),
+    text3: s.getPropertyValue('--text3').trim(),
+    border: s.getPropertyValue('--border').trim(),
+    green: s.getPropertyValue('--green').trim(),
+    red: s.getPropertyValue('--red').trim(),
+  };
+}
+
+function drawIdle(c) {
+  const pc = [c.p1,c.p2,c.p3,c.p4];
+  particles.forEach((a,i) => {
+    particles.forEach((b,j) => {
+      if (j <= i || a.g !== b.g) return;
+      const d = Math.hypot(a.x-b.x, a.y-b.y);
+      if (d < 45) {
+        cx.beginPath(); cx.moveTo(a.x,a.y); cx.lineTo(b.x,b.y);
+        cx.strokeStyle = pc[a.g]; cx.globalAlpha = .12*(1-d/45); cx.lineWidth = .5; cx.stroke();
+        cx.globalAlpha = 1;
+      }
+    });
+  });
+  particles.forEach(p => {
+    const pulse = Math.sin(vizAnim*.02+p.phase)*.3+.7;
+    cx.beginPath(); cx.arc(p.x,p.y,p.r*pulse,0,Math.PI*2);
+    cx.fillStyle = pc[p.g]; cx.globalAlpha = p.alpha*pulse; cx.fill();
+    cx.globalAlpha = 1;
+    p.x += p.vx; p.y += p.vy;
+    if (p.x<4||p.x>CW-4) p.vx*=-1;
+    if (p.y<4||p.y>CH-4) p.vy*=-1;
+  });
+  cx.fillStyle = c.text3; cx.font = '9px JetBrains Mono, monospace'; cx.fillText('vector space', 6, CH-5);
+}
+
+function drawPipeline(c, label, progress) {
+  cx.clearRect(0,0,CW,CH);
+  cx.fillStyle = c.text3; cx.font = '9px JetBrains Mono, monospace'; cx.fillText(label + '...', 6, 14);
+  cx.fillStyle = c.border; cx.fillRect(6, CH-10, CW-12, 3);
+  cx.fillStyle = c.acc; cx.fillRect(6, CH-10, (CW-12)*progress, 3);
+}
+
+function drawCanvas() {
+  const c = getColors();
+  vizAnim++;
+  if (vizState === 'idle') { cx.clearRect(0,0,CW,CH); drawIdle(c); }
+  else { drawPipeline(c, vizState, vizProgress); }
+  requestAnimationFrame(drawCanvas);
+}
+drawCanvas();
+
+/* ── PIPELINE STEPS ── */
+const stepIds = ['ps0','ps1','ps2','ps3','ps4','ps5'];
+const stateNames = ['ingesting','chunking','embedding','indexing','retrieving','generating'];
+
+function runPipeline(cb) {
+  let step = 0;
+  stepIds.forEach(id => document.getElementById(id).className = 'pipe-step idle');
+  vizState = 'idle';
+
+  function doStep() {
+    if (step >= stepIds.length) { vizState = 'idle'; if(cb) cb(); return; }
+    const el = document.getElementById(stepIds[step]);
+    el.className = 'pipe-step running';
+    vizState = stateNames[step];
+    vizProgress = 0;
+    let p = 0;
+    const iv = setInterval(() => {
+      p += .03;
+      vizProgress = Math.min(p, 1);
+      if (p >= 1) {
+        clearInterval(iv);
+        el.className = 'pipe-step done';
+        step++;
+        setTimeout(doStep, 200);
+      }
+    }, 30);
+  }
+  doStep();
+}
+
+/* ── CHAT HISTORY ── */
+let chatHistory = [];
+
+function ts() { return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
+
+function useChip(el) {
+  const txt = el.textContent.replace(/^.\s/,'').trim();
+  document.getElementById('inp').value = txt;
+  send();
+}
+
+function send() {
+  const inp = document.getElementById('inp');
+  const text = inp.value.trim();
+  if (!text) return;
+
+  const msgs = document.getElementById('msgs');
+  document.getElementById('welcome')?.remove();
+
+  // Add to history
+  chatHistory.push({role: 'user', content: text});
+
+  msgs.innerHTML += `<div class="msg user"><div class="avatar">N</div><div class="msg-body"><div class="msg-name">${ts()}</div><div class="bubble">${text}</div></div></div>`;
+  inp.value = ''; inp.style.height = 'auto';
+
+  const tid = 'ty_'+Date.now();
+  msgs.innerHTML += `<div class="typing" id="${tid}"><div class="avatar" style="background:var(--teal)">⬡</div><div class="typing-bubble"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><div class="typing-status">Thinking...</div></div></div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+
+  runPipeline(() => {
+    fetch('http://127.0.0.1:8000/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text, top_k: parseInt(document.getElementById('vk').textContent) || 3 })
+    })
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById(tid)?.remove();
+      let srcHtml = '';
+      if (data.sources && data.sources.length > 0) {
+        srcHtml = `<div class="sources"><div class="sources-head">Sources <span class="src-count">${data.sources.length}</span></div><div class="sources-body">${data.sources.map(s => `<div class="chunk"><div class="chunk-top"><span class="chunk-id">Doc: ${s.doc_id || 'Unknown'} · Page ${s.page}</span></div><div class="chunk-text">${s.text}</div></div>`).join('')}</div></div>`;
+      }
+      msgs.innerHTML += `<div class="msg bot"><div class="avatar">⬡</div><div class="msg-body"><div class="msg-name">${ts()} · VectorMind</div><div class="bubble">${data.answer}</div>${srcHtml}</div></div>`;
+      msgs.scrollTop = msgs.scrollHeight;
+      vizState = 'idle';
+      
+      // Add to history
+      chatHistory.push({role: 'assistant', content: data.answer});
+      updateStats();
+    })
+    .catch(err => {
+      document.getElementById(tid)?.remove();
+      msgs.innerHTML += `<div class="msg bot"><div class="avatar">⬡</div><div class="msg-body"><div class="bubble">❌ Error: ${err.message}</div></div></div>`;
+      vizState = 'idle';
+    });
+  });
+}
+
+function handleKey(e) {
+  if (e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}
+}
+
+function clearChat() {
+  chatHistory = [];
+  vizState = 'idle';
+  stepIds.forEach(id => document.getElementById(id).className = 'pipe-step idle');
+  document.getElementById('msgs').innerHTML = `<div class="welcome" id="welcome"><div class="welcome-icon">⬡</div><div class="welcome-title">Ready to retrieve</div><div class="welcome-sub">Upload PDFs or paste text. Ask anything — watch the pipeline animate as your query flows through each stage.</div><div class="chips"><div class="chip" onclick="useChip(this)">🔍 What is this document about?</div><div class="chip" onclick="useChip(this)">📊 Summarise the key points</div><div class="chip" onclick="useChip(this)">💡 What are the main conclusions?</div></div></div>`;
+}
+
+/* ── DOCUMENT MANAGEMENT ── */
+function loadDocuments() {
+  fetch('http://127.0.0.1:8000/documents')
+    .then(res => res.json())
+    .then(data => {
+      const container = document.getElementById('docList');
+      if (data.documents && data.documents.length > 0) {
+        container.innerHTML = data.documents.map(d => `
+          <div class="doc-item">
+            <span>📄 ${d.name}</span>
+            <span style="font-size:9px;color:var(--text3);">${d.chunks} chunks</span>
+            <button class="doc-del" onclick="deleteDoc('${d.id}')">✕</button>
+          </div>
+        `).join('');
+        document.getElementById('sDocs').textContent = data.documents.length;
+      } else {
+        container.innerHTML = '<div style="color:var(--text3);font-size:11px;padding:4px;">No documents uploaded</div>';
+        document.getElementById('sDocs').textContent = '0';
+      }
+    })
+    .catch(() => {});
+}
+
+function deleteDoc(docId) {
+  if (confirm('Delete this document?')) {
+    fetch(`http://127.0.0.1:8000/documents/${docId}`, {
+      method: 'DELETE'
+    })
+    .then(res => res.json())
+    .then(() => {
+      loadDocuments();
+      updateStats();
+      alert('Document deleted!');
+    })
+    .catch(err => alert('Error: ' + err.message));
+  }
+}
+
+function updateStats() {
+  fetch('http://127.0.0.1:8000/status')
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('sChunks').textContent = data.total_chunks || 0;
+      document.getElementById('sDocs').textContent = data.total_documents || 0;
+    })
+    .catch(() => {});
+}
+
+/* ── FILE UPLOAD ── */
+function handleFiles(e) {
+  const files = e.target.files;
+  if (!files || files.length === 0) return;
+  
+  const z = document.getElementById('uploadZone');
+  z.querySelector('.upload-text').textContent = `Uploading ${files.length} files...`;
+  z.querySelector('.upload-hint').textContent = '⏳ processing';
+  
+  const formData = new FormData();
+  for (let i = 0; i < files.length; i++) {
+    formData.append('files', files[i]);
+  }
+  
+  fetch('http://127.0.0.1:8000/upload', {
+    method: 'POST',
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    z.querySelector('.upload-text').textContent = `✅ ${data.files?.length || files.length} files processed`;
+    z.querySelector('.upload-hint').textContent = `${data.total_chunks} chunks indexed`;
+    z.style.borderColor = 'var(--green)';
+    setTimeout(() => { z.style.borderColor = ''; }, 2000);
+    loadDocuments();
+    updateStats();
+  })
+  .catch(err => {
+    z.querySelector('.upload-text').textContent = '❌ Upload failed';
+    z.querySelector('.upload-hint').textContent = err.message;
+  });
+}
+
+function processPastedText() {
+  const text = document.getElementById('pasteText').value.trim();
+  if (!text) {
+    alert('Please paste some text first!');
+    return;
+  }
+
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = '⏳ Processing...';
+  btn.disabled = true;
+
+  const blob = new Blob([text], { type: 'text/plain' });
+  const file = new File([blob], 'pasted_text.txt', { type: 'text/plain' });
+  const formData = new FormData();
+  formData.append('files', file);
+
+  fetch('http://127.0.0.1:8000/upload', {
+    method: 'POST',
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    btn.textContent = '✅ Done!';
+    btn.style.background = 'var(--green)';
+    document.getElementById('sChunks').textContent = data.total_chunks || 0;
+    document.getElementById('pasteText').value = '';
+    loadDocuments();
+    updateStats();
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.style.background = '';
+      btn.disabled = false;
+    }, 2000);
+  })
+  .catch(err => {
+    btn.textContent = '❌ Error';
+    btn.style.background = 'var(--red)';
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.style.background = '';
+      btn.disabled = false;
+    }, 2000);
+  });
+}
+
+function clearIndex() {
+  if (confirm('Clear all indexed data? This will remove all documents.')) {
+    fetch('http://127.0.0.1:8000/clear', {
+      method: 'POST'
+    })
+    .then(res => res.json())
+    .then(() => {
+      document.getElementById('sChunks').textContent = '0';
+      document.getElementById('sDocs').textContent = '0';
+      document.getElementById('uploadZone').querySelector('.upload-text').textContent = 'Upload Multiple Files';
+      document.getElementById('uploadZone').querySelector('.upload-hint').textContent = 'PDF · TXT · MD (select multiple)';
+      loadDocuments();
+      alert('✅ Index cleared!');
+    })
+    .catch(err => alert('❌ Error: ' + err.message));
+  }
+}
+
+// Load documents on page load
+document.addEventListener('DOMContentLoaded', function() {
+  loadDocuments();
+  updateStats();
+});
+</script>
+</body>
+</html>
