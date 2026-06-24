@@ -1,39 +1,20 @@
-import os
-import tempfile
-import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import os
+import shutil
+from typing import List, Optional
+import tempfile
 
 from backend.chunker import PDFChunker
 from backend.embedder import Embedder
 from backend.vector_store import VectorStore
 from backend.llm import LLM
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+app = FastAPI(title="RAG Chatbot API")
 
-# Initialize components
-logger.info("Initializing RAG chatbot components...")
-store = VectorStore()
-# Load existing index if it exists, otherwise initialize empty
-if not store.load():
-    logger.info("No pre-existing vector store found. Initializing empty index.")
-    store.create_index()
-
-embedder = Embedder()
-llm = LLM()
-
-app = FastAPI(
-    title="RAG Chatbot API",
-    description="A minimalist backend API for the PDF-based RAG Chatbot.",
-    version="1.0.0"
-)
-
-# Enable CORS for frontend development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,105 +23,148 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class QueryRequest(BaseModel):
+chunker = PDFChunker()
+embedder = Embedder()
+vector_store = VectorStore()
+llm = LLM()
+
+vector_store.load()
+
+TEMP_FOLDER = "temp"
+os.makedirs(TEMP_FOLDER, exist_ok=True)
+
+
+class QuestionRequest(BaseModel):
     question: str
+    top_k: int = 3
 
-@app.post("/api/chat")
-async def chat(request: QueryRequest):
-    """
-    Handle query request by embedding the question, searching the vector store
-    for the most relevant chunks, and generating an answer using the LLM.
-    """
-    if not request.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+class AnswerResponse(BaseModel):
+    answer: str
+    sources: List[dict]
+
+
+@app.post("/upload")
+async def upload_files(files: List[UploadFile] = File(...)):
+    """Upload multiple files and process them"""
     
-    try:
-        # 1. Embed query
-        query_vector = embedder.embed_text(request.question)
-        
-        # 2. Search vector store
-        results = store.search(query_vector, k=3)
-        
-        # 3. Generate answer
-        answer = llm.generate_answer(request.question, results)
-        
-        # 4. Formulate source metadata for frontend
-        sources = []
-        for res in results:
-            sources.append({
-                "text": res["chunk"]["text"],
-                "page_number": res["chunk"].get("page_number", "Unknown"),
-                "distance": res["distance"]
-            })
-            
-        return {
-            "question": request.question,
-            "answer": answer,
-            "sources": sources
-        }
-    except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-@app.post("/api/upload")
-async def upload_pdf(file: UploadFile = File(...)):
-    """
-    Accept a PDF file, chunk it, generate embeddings,
-    add to vector store, and save the updated index.
-    """
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    if not files:
+        raise HTTPException(400, "No files uploaded")
     
-    temp_file_path = None
-    try:
-        # Create a temporary file to save the uploaded PDF bytes
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(await file.read())
-            temp_file_path = tmp.name
-        
-        # 1. Extract text and chunk
-        chunker = PDFChunker()
-        pages = chunker.extract_text_from_pdf(temp_file_path)
-        if not pages:
-            raise HTTPException(status_code=400, detail="Could not extract any text from the PDF.")
+    # Clear existing index
+    vector_store.clear()
+    
+    all_chunks = []
+    doc_names = []
+    
+    for file in files:
+        if not file.filename.endswith(('.pdf', '.txt')):
+            continue
             
-        chunks = chunker.chunk_text(pages)
+        file_path = os.path.join(TEMP_FOLDER, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
         
-        # 2. Generate embeddings
-        chunks_with_embeddings = embedder.embed_chunks(chunks)
-        
-        # 3. Add to vector store and save
-        store.add_chunks(chunks_with_embeddings)
-        store.save()
-        
-        return {
-            "status": "success",
-            "message": f"Successfully processed '{file.filename}'. Added {len(chunks)} text chunks to the database.",
-            "chunks_added": len(chunks)
-        }
-    except Exception as e:
-        logger.error(f"Error processing PDF upload: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
-    finally:
-        # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except Exception as e:
-                logger.warning(f"Failed to delete temp file {temp_file_path}: {e}")
+        try:
+            if file.filename.endswith('.pdf'):
+                pages = chunker.extract_text_from_pdf(file_path)
+            else:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                pages = [{"page_number": 1, "text": content}]
+            
+            chunks = chunker.chunk_text(pages)
+            for chunk in chunks:
+                chunk["doc_name"] = file.filename
+            all_chunks.extend(chunks)
+            doc_names.append(file.filename)
+            
+            os.remove(file_path)
+            
+        except Exception as e:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise HTTPException(500, f"Error processing {file.filename}: {str(e)}")
+    
+    if not all_chunks:
+        raise HTTPException(400, "No valid files processed")
+    
+    # Embed and store all chunks
+    all_chunks = embedder.embed_chunks(all_chunks)
+    vector_store.add_multiple_files(all_chunks, ", ".join(doc_names[:3]) + ("..." if len(doc_names) > 3 else ""))
+    vector_store.save()
+    
+    return {
+        "message": f"Processed {len(files)} files successfully!",
+        "total_chunks": len(all_chunks),
+        "files": doc_names
+    }
 
-# Mount static files folder
+
+@app.post("/ask", response_model=AnswerResponse)
+async def ask_question(request: QuestionRequest):
+    """Ask a question and get an answer based on the indexed documents."""
+    
+    if vector_store.index is None or vector_store.index.ntotal == 0:
+        raise HTTPException(400, "No documents indexed. Please upload files first.")
+    
+    query_vector = embedder.embed_text(request.question)
+    results = vector_store.search(query_vector, k=request.top_k)
+    
+    if not results:
+        return AnswerResponse(
+            answer="No relevant information found in the documents.",
+            sources=[]
+        )
+    
+    answer = llm.generate_answer(request.question, results)
+    
+    sources = []
+    for r in results:
+        sources.append({
+            "text": r["chunk"]["text"][:300] + "...",
+            "page": r["chunk"]["page_number"],
+            "doc_id": r["chunk"].get("doc_id", "Unknown"),
+            "distance": r["distance"]
+        })
+    
+    return AnswerResponse(answer=answer, sources=sources)
+
+
+@app.get("/documents")
+def get_documents():
+    """Get list of uploaded documents"""
+    return {"documents": vector_store.get_documents()}
+
+
+@app.delete("/documents/{doc_id}")
+def delete_document(doc_id: str):
+    """Delete a specific document"""
+    success = vector_store.delete_document(doc_id)
+    vector_store.save()
+    if success:
+        return {"message": f"Document {doc_id} deleted successfully"}
+    return {"message": "Document not found"}
+
+
+@app.get("/status")
+def get_status():
+    return {
+        "documents_indexed": vector_store.index is not None and vector_store.index.ntotal > 0,
+        "total_chunks": vector_store.index.ntotal if vector_store.index else 0,
+        "total_documents": len(vector_store.get_documents())
+    }
+
+
+@app.post("/clear")
+def clear_index():
+    vector_store.clear()
+    vector_store.save()
+    return {"message": "Index cleared"}
+
+
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 @app.get("/")
-async def get_index():
-    """Serve the main index.html file."""
-    index_path = os.path.join("frontend", "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    raise HTTPException(status_code=404, detail="Frontend index.html not found.")
-
-if __name__ == "__main__":
-    import uvicorn
-    # Start the server on port 8005
-    uvicorn.run(app, host="127.0.0.1", port=8005)
+async def serve_frontend():
+    return FileResponse("frontend/index.html")
